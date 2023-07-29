@@ -1,0 +1,110 @@
+// Incluye la librería LiquidCrystal_I2C
+#include <LiquidCrystal_I2C.h>
+
+// Crea un objeto lcd con la dirección I2C y las dimensiones de la pantalla
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Define el pin donde está conectado el sensor RCWL-0516
+#define SENSOR_PIN 2
+
+// Define el pin donde está conectado el LED
+#define LED_PIN 13
+
+// Define el pin donde está conectado el buzzer
+#define BUZZER_PIN 3
+
+// Define una variable booleana para guardar el estado del sensor
+bool sensorState = false;
+
+// Define una variable para guardar el tiempo anterior
+unsigned long previousTime = 0;
+
+// Define una variable para guardar la frecuencia
+float frequency = 0;
+
+// Define una variable para guardar la distancia
+float distance = 0;
+
+// Define una constante para la velocidad de la luz en metros por segundo
+#define SPEED_OF_LIGHT 299792458
+
+// Define una constante para la frecuencia de emisión del sensor en hertzios
+#define EMISSION_FREQUENCY 3200000000
+
+void setup() {
+  // Inicializa la comunicación serial a 9600 baudios
+  Serial.begin(9600);
+
+  // Inicializa la pantalla LCD
+  lcd.init();
+
+  // Enciende la luz de fondo de la pantalla LCD
+  lcd.backlight();
+
+  // Configura el pin del sensor como entrada
+  pinMode(SENSOR_PIN, INPUT);
+
+  // Configura el pin del LED como salida
+  pinMode(LED_PIN, OUTPUT);
+
+  // Configura el pin del buzzer como salida
+  pinMode(BUZZER_PIN, OUTPUT);
+}
+
+void loop() {
+  // Lee el estado del sensor usando PORTD directamente
+  sensorState = PIND & (1 << SENSOR_PIN);
+
+  // Si el sensor detecta movimiento
+  if (sensorState) {
+    // Enciende el LED usando PORTB directamente
+    PORTB |= B00100000;
+
+    // Emite un sonido con el buzzer usando PORTD directamente
+    PORTD |= B00001000;
+
+    // Obtiene el tiempo actual en milisegundos
+    unsigned long currentTime = millis();
+
+    // Calcula la frecuencia como el inverso del periodo
+    frequency = 1000.0 / (currentTime - previousTime);
+
+    // Calcula la distancia usando la función
+    distance = frequencyToDistance(frequency);
+
+    // Actualiza el tiempo anterior
+    previousTime = currentTime;
+
+    // Muestra la frecuencia y la distancia en la pantalla LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Frecuencia: ");
+    lcd.print(frequency, 2);
+    lcd.print(" Hz");
+    lcd.setCursor(0, 1);
+    lcd.print("Distancia: ");
+    lcd.print(distance, 2);
+    lcd.print(" m");
+
+    // Muestra la frecuencia y la distancia en el monitor serial
+    Serial.print("Frecuencia: ");
+    Serial.print(frequency, 2);
+    Serial.println(" Hz");
+    Serial.print("Distancia: ");
+    Serial.print(distance, 2);
+    Serial.println(" m");
+  }
+  else {
+    // Apaga el LED usando PORTB directamente
+    PORTB &= B11011111;
+
+    // Apaga el buzzer usando PORTD directamente
+    PORTD &= B11110111;
+  }
+}
+
+// Define una función para convertir la frecuencia a distancia
+float frequencyToDistance(float frequency) {
+  // Calcula la distancia como la mitad del producto de la velocidad de la luz y el cambio relativo de frecuencia
+  return (SPEED_OF_LIGHT * (frequency - EMISSION_FREQUENCY) / EMISSION_FREQUENCY) / 2;
+}
