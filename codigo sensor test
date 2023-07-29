@@ -1,0 +1,194 @@
+// Incluye la librería LiquidCrystal_I2C
+#include <LiquidCrystal_I2C.h>
+
+// Incluye la librería PWM
+#include <PWM.h>
+
+// Crea un objeto lcd con la dirección I2C y las dimensiones de la pantalla
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Define el pin donde está conectado el LED
+#define LED_PIN 13
+
+// Define el pin donde está conectado el buzzer
+#define BUZZER_PIN 3
+
+// Define una constante para la velocidad de la luz en metros por segundo
+#define c 2.99792458e8
+
+// Define una constante para la frecuencia de emisión del sensor en hertzios
+#define f0 3.2e9
+
+// Define una clase para el sensor RCWL-0516
+class Sensor {
+  public:
+    // Constructor de la clase
+    Sensor(byte pin) {
+      // Asigna el pin del sensor al atributo pin
+      this->pin = pin;
+
+      // Configura el pin del sensor como entrada
+      pinMode(pin, INPUT);
+
+      // Inicializa los atributos del sensor
+      this->state = 0;
+      this->period = 0;
+      this->frequency = 0;
+      this->distance = 0;
+
+      // Asigna una interrupción externa al pin del sensor
+      attachInterrupt(digitalPinToInterrupt(pin), isr, CHANGE);
+    }
+
+    // Método para leer el estado del sensor
+    byte readState() {
+      return this->state;
+    }
+
+    // Método para leer el periodo del sensor
+    float readPeriod() {
+      return this->period;
+    }
+
+    // Método para leer la frecuencia del sensor
+    float readFrequency() {
+      return this->frequency;
+    }
+
+    // Método para leer la distancia del sensor
+    float readDistance() {
+      return this->distance;
+    }
+
+    // Método para calcular la frecuencia y la distancia del sensor
+    void calculate() {
+      // Calcula la frecuencia como el inverso del periodo
+      this->frequency = 1000000.0 / this->period;
+
+      // Calcula la distancia como la mitad del producto de la velocidad de la luz y el cambio relativo de frecuencia
+      this->distance = (c * (this->frequency - f0) / f0) / 2;
+    }
+
+  private:
+    // Atributos de la clase
+    byte pin; // Pin donde está conectado el sensor
+    byte state; // Estado actual del sensor (0 o 1)
+    float period; // Periodo del sensor en microsegundos
+    float frequency; // Frecuencia del sensor en hertzios
+    float distance; // Distancia estimada por el sensor en metros
+
+    // Función auxiliar para manejar la interrupción externa
+    static void isr() {
+      // Obtiene una referencia al objeto sensor usando un puntero estático
+      static Sensor* sensor = NULL;
+
+      // Si el puntero es nulo, lo inicializa con la dirección del objeto creado en el programa principal
+      if (sensor == NULL) {
+        sensor = &sensor1;
+      }
+
+      // Lee el estado actual del pin del sensor usando PORTD directamente
+      byte currentState = PIND & B00000100;
+
+      // Si el estado actual es diferente al anterior
+      if (currentState != sensor->state) {
+        // Actualiza el estado anterior con el actual
+        sensor->state = currentState;
+
+        // Si el estado actual es alto (HIGH)
+        if (currentState) {
+          // Obtiene el tiempo actual usando un temporizador de 16 bits (Timer1)
+          unsigned int currentTime = TCNT1;
+
+          // Calcula el periodo como la diferencia entre el tiempo actual y el anterior
+          sensor->period = currentTime - sensor->previousTime;
+
+          // Actualiza el tiempo anterior con el actual
+          sensor->previousTime = currentTime;
+        }
+      }
+    }
+
+    // Atributo auxiliar para guardar el tiempo anterior en microsegundos
+    unsigned int previousTime;
+};
+
+// Crea un objeto sensor con el pin 2
+Sensor sensor1(2);
+
+void setup() {
+  // Inicializa la comunicación serial a 9600 baudios
+  Serial.begin(9600);
+
+  // Inicializa la pantalla LCD
+  lcd.init();
+
+  // Enciende la luz de fondo de la pantalla LCD
+  lcd.backlight();
+
+  // Inicializa el temporizador de 16 bits (Timer1) con un preescalador de 8 y una frecuencia de 2 MHz
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCCR1B |= (1 << CS11);
+  TCNT1 = 0;
+
+  // Inicializa la librería PWM con una frecuencia de 20 kHz y una resolución de 10 bits
+  InitTimersSafe();
+  bool success = SetPinFrequencySafe(LED_PIN, 20000);
+  if (success) {
+    pinMode(LED_PIN, OUTPUT);
+  }
+}
+
+void loop() {
+  // Si el sensor detecta movimiento
+  if (sensor1.readState()) {
+    // Calcula la frecuencia y la distancia del sensor
+    sensor1.calculate();
+
+    // Muestra la frecuencia y la distancia en la pantalla LCD
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Frecuencia: ");
+    lcd.print(sensor1.readFrequency(), 2);
+    lcd.print(" Hz");
+    lcd.setCursor(0, 1);
+    lcd.print("Distancia: ");
+    lcd.print(sensor1.readDistance(), 2);
+    lcd.print(" m");
+
+    // Muestra la frecuencia y la distancia en el monitor serial
+    Serial.print("Frecuencia: ");
+    Serial.print(sensor1.readFrequency(), 2);
+    Serial.println(" Hz");
+    Serial.print("Distancia: ");
+    Serial.print(sensor1.readDistance(), 2);
+    Serial.println(" m");
+
+    // Mapea el periodo del sensor a un rango de valores entre 0 y 1023 para el LED y entre 500 y 2000 para el buzzer usando la función mapFloat()
+    int ledValue = mapFloat(sensor1.readPeriod(), 0, 10000, 0, 1023);
+    int buzzerValue = mapFloat(sensor1.readPeriod(), 0, 10000, 500, 2000);
+
+    // Escribe el valor mapeado en el pin del LED usando la función pwmWrite()
+    pwmWrite(LED_PIN, ledValue);
+
+    // Escribe el valor mapeado en el pin del buzzer usando la función tone()
+    tone(BUZZER_PIN, buzzerValue);
+  }
+}
+
+La explicación paso a paso del funcionamiento es la siguiente:
+
+- Primero, se incluyen las librerías necesarias para usar la pantalla LCD y la librería PWM.
+- Luego, se crean los objetos lcd y sensor1, que representan la pantalla LCD y el sensor RCWL-0516 respectivamente.
+- Después, se definen los pines donde están conectados el LED y el buzzer, así como las constantes para la velocidad de la luz y la frecuencia de emisión del sensor.
+- En el método setup(), se inicializa la comunicación serial, la pantalla LCD, el temporizador de 16 bits y la librería PWM.
+- En el método loop(), se lee el estado del sensor usando el método readState() de la clase Sensor. Si el estado es alto (HIGH), significa que el sensor detecta movimiento.
+- En ese caso, se calcula la frecuencia y la distancia del sensor usando el método calculate() de la clase Sensor. Este método usa la fórmula de Doppler para estimar la distancia basándose en el cambio relativo de frecuencia entre la señal emitida y la reflejada por el objeto en movimiento.
+- Luego, se muestra la frecuencia y la distancia en la pantalla LCD y en el monitor serial usando los métodos readFrequency() y readDistance() de la clase Sensor. Estos métodos devuelven los valores calculados anteriormente.
+- Después, se mapea el periodo del sensor a un rango de valores adecuado para el LED y el buzzer usando la función mapFloat(). Esta función usa aritmética de coma flotante para hacer una conversión lineal entre dos rangos de valores.
+- Finalmente, se escribe el valor mapeado en el pin del LED usando la función pwmWrite() de la librería PWM. Esta función genera una señal PWM con una resolución y una frecuencia especificadas. También se escribe el valor mapeado en el pin del buzzer usando la función tone(). Esta función genera un sonido con una frecuencia determinada.
+
+El funcionamiento del LED y el buzzer depende del valor del periodo del sensor, que a su vez depende de la velocidad y la distancia del objeto en movimiento. A mayor velocidad o menor distancia, menor será el periodo y mayor será la frecuencia. Esto hará que el LED brille más y que el buzzer suene más agudo. A menor velocidad o mayor distancia, mayor será el periodo y menor será la frecuencia. Esto hará que el LED brille menos y que el buzzer suene más grave.
+
+Espero que esta explicación te haya aclarado cómo funciona
