@@ -1,0 +1,152 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+const int SENSOR_PIN = 2;
+const int LED_PIN = 7;
+const int BUZZER_PIN = 9;
+const float DISTANCE = 1.0; // Distancia recorrida en metros
+
+String message = "";
+
+const unsigned long MINIMUM_DETECTION_TIME = 500; // Tiempo mínimo de detección en milisegundos (0.5 segundos)
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(SENSOR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Sistema iniciado");
+  lcd.setCursor(0, 1);
+  lcd.print("Version 1.0");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  int sensorValue = digitalRead(SENSOR_PIN);
+
+  if (sensorValue == HIGH) {
+    message = "Movimiento detectado";
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(message);
+    digitalWrite(LED_PIN, HIGH); // Encender el LED
+    lcd.setCursor(0, 2);
+    lcd.print("Calculando duracion");
+    lcd.setCursor(0, 3);
+    lcd.print("[          ]");
+    lcd.setCursor(1, 3);
+    for (int i = 0; i < 10; i++) {
+      lcd.print("#");
+      // Hace sonar el buzzer mientras se está calculando el tiempo
+      tone(BUZZER_PIN, 1000);
+      delay(150);
+      noTone(BUZZER_PIN);
+      delay(150);
+    }
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("El tiempo fue:");
+    lcd.setCursor(0, 1);
+    lcd.print("Calculando...");
+
+    Serial.println(message); // Envía el mensaje al monitor serial
+
+    unsigned long startTime = millis();
+    int count = 0;
+    while (digitalRead(SENSOR_PIN) == HIGH) {
+      count++; // Cuenta los cambios de estado (flancos) del sensor
+    }
+    unsigned long endTime = millis();
+    unsigned long detectionTime = endTime - startTime;
+    if (detectionTime >= MINIMUM_DETECTION_TIME) {
+      float detectionTimeSeconds = detectionTime / 1000.0;
+      int minutes = detectionTimeSeconds / 60;
+      int seconds = int(detectionTimeSeconds) % 60;
+      int centiseconds = (detectionTimeSeconds - int(detectionTimeSeconds)) * 100;
+
+      float timeInSeconds = minutes * 60 + seconds + centiseconds / 100.0;
+      float velocity = DISTANCE / (timeInSeconds);
+
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("El tiempo fue:");
+      lcd.setCursor(0, 1);
+      if (minutes > 0) {
+        lcd.print(minutes);
+        lcd.print(" min ");
+      }
+      lcd.print(seconds);
+      lcd.print(".");
+      if (centiseconds < 10) {
+        lcd.print("0");
+      }
+      lcd.print(centiseconds);
+      lcd.print(" s");
+
+      lcd.setCursor(0, 2);
+      lcd.print("Velocidad:");
+      lcd.setCursor(0, 3);
+      if (velocity >= 0.01) {
+        lcd.print(velocity, 2);
+      } else {
+        lcd.print(velocity, 3);
+      }
+      lcd.print(" m/s");
+
+      Serial.print("El tiempo fue: "); // Envía el mensaje al monitor serial
+      if (minutes > 0) {
+        Serial.print(minutes);
+        Serial.print(" min ");
+      }
+      Serial.print(seconds);
+      Serial.print(".");
+      if (centiseconds < 10) {
+        Serial.print("0");
+      }
+      Serial.print(centiseconds);
+      Serial.println(" s");
+
+      Serial.print("Velocidad: "); // Envía el mensaje al monitor serial
+      if (velocity >= 0.01) {
+        Serial.print(velocity, 2);
+      } else {
+        Serial.print(velocity, 3);
+      }
+      Serial.println(" m/s");
+
+      // Hace sonar el buzzer para indicar que se ha calculado el tiempo
+      tone(BUZZER_PIN, 2000);
+      delay(300);
+      noTone(BUZZER_PIN);
+
+    } else {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Tiempo muy corto");
+
+      // Hace sonar el buzzer para indicar una advertencia de tiempo muy corto
+      tone(BUZZER_PIN, 1500);
+      delay(500);
+      noTone(BUZZER_PIN);
+    }
+    digitalWrite(LED_PIN, LOW); // Apagar el LED
+    delay(2000); // Muestra el tiempo durante 2 segundos antes de volver a detectar movimiento
+  } else {
+    message = "Sin movimiento";
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(message);
+    digitalWrite(LED_PIN, LOW); // Apagar el LED
+    delay(1000); // Pequeño retraso para evitar parpadeo en el LCD
+
+    Serial.println(message); // Envía el mensaje al monitor serial
+  }
+}
